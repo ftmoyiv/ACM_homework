@@ -62,19 +62,6 @@ bframe1 <- data.frame(solvency = x, PIratio = boundry12, deny=rep("boundry12", l
 bframe2 <- data.frame(solvency = x, PIratio = boundry13, deny=rep("boundry13", length(x)))
 bframe3 <- data.frame(solvency = x, PIratio = boundry23, deny=rep("boundry23", length(x)))
 
-# ggplot(data = loanDf, 
-#        aes(x = solvency, y = PIratio, colour=deny, fill=deny)) + 
-#   geom_point() +
-#   xlab("solvency") +
-#   ylab("PIratio") +
-#   #ylim(0, 10) +
-#   theme_bw(base_size = 14, base_family = "Helvetica") +
-#   geom_line(data = bframe1) +
-#   geom_line(data = bframe2) +
-#   geom_line(data = bframe3) +
-#   scale_color_manual("deny", values = c("boundry12" = "black", "boundry13" = "grey", "boundry23" = "purple",
-#                                         "Approved" = "blue", "Denied" = "red", "Undecided" = "green"))
-
 predframe <- data.frame(loanDf, predictions, predictedLabels) 
 if(csv){
   write.csv(predframe, "perdictions.csv")
