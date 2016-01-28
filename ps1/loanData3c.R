@@ -1,0 +1,84 @@
+library(mvtnorm)
+library(ggplot2)
+sigmaXY <- function(rho, sdX, sdY) {
+  covTerm <- rho * sdX * sdY
+  VCmatrix <- matrix(c(sdX^2, covTerm, covTerm, sdY^2), 
+                     2, 2, byrow = TRUE)
+  return(VCmatrix)
+}
+
+genBVN <- function(n = 1, seed = NA, muXY=c(0,1), sigmaXY=diag(2)) {
+  if(!is.na(seed)) set.seed(seed)
+  rdraws <- rmvnorm(n, mean = muXY, sigma = sigmaXY)
+  return(rdraws)
+}
+
+# correlation is slightly negative
+sigmaXY(rho=-0.1, sdX=1, sdY=20)
+
+# highly positive
+sigmaXY(rho=0.8, sdX=2, sdY=30)
+
+# creating a function for all of this
+loanData <- function(noApproved, noDenied, noUndecided, muApproved, muDenied, muUndecided,sdApproved, 
+                     sdDenied, sdUndecided, rhoApproved, rhoDenied, rhoUndecided, seed=1111) {
+  sigmaApproved <- sigmaXY(rho=rhoApproved, sdX=sdApproved[1], sdY=sdApproved[2])
+  sigmaDenied <- sigmaXY(rho=rhoDenied, sdX=sdDenied[1], sdY=sdDenied[2])
+  sigmaUndecided <- sigmaXY(rho=rhoUndecided, sdX=sdUndecided[1], sdY=sdUndecided[2])
+  approved <- genBVN(noApproved, muApproved, sigmaApproved, seed = seed)
+  denied <- genBVN(noDenied, muDenied, sigmaDenied, seed = seed+1)
+  undecided <- genBVN(noUndecided, muUndecided, sigmaUndecided, seed = seed + 2)
+  loanDf <- as.data.frame(rbind(approved,denied,undecided))
+  deny <- c(rep("Approved", noApproved), rep("Denied", noDenied), rep("Undecided", noUndecided))
+  target1 = c(rep(1, noApproved), rep(0, noDenied + noUndecided))
+  target2 = c(rep(0, noApproved), rep(1, noDenied), rep(0, noUndecided))
+  target3 = c(rep(0, noApproved + noDenied), rep(1, noUndecided))
+  loanDf <- data.frame(loanDf, deny, target1, target2, target3)
+  colnames(loanDf) <- c("PIratio", "solvency", "deny", "target1", "target2", "target3")
+  return(loanDf)
+}
+
+# generating some data
+loanDf <- loanData(noApproved=5, noDenied=5, noUndecided=5,c(4, 150), c(10, 100), c(8, 125),
+                   c(1,20), c(2,30), c(2,20), -0.1, 0.6, 0.5, 1221)
+
+X<-as.matrix(cbind(ind=rep(1, nrow(loanDf)), loanDf[,c("PIratio","solvency")]))
+Y<-as.matrix(loanDf[, c("target1","target2","target3")])
+
+weightsOptim <- solve(t(X)%*%X) %*% t(X) %*% Y
+
+x <- seq(min(loanDf["solvency"]), max(loanDf["solvency"]), length.out = 1000)
+
+predictions <- X %*% weightsOptim
+
+denied <- (predictions==apply(predictions, 1, max))
+predictedLabels <- ifelse(denied[,1], "Approved", ifelse(denied[,2], "Denied", "Undecided"))
+
+boundry12 <- (-weightsOptim[1,1] + weightsOptim[1,2] + weightsOptim[3,2]*x - weightsOptim[3,1]*x)/(weightsOptim[2,1] - weightsOptim[2,2])
+boundry13 <- (-weightsOptim[1,1] + weightsOptim[1,3] + weightsOptim[3,3]*x - weightsOptim[3,1]*x)/(weightsOptim[2,1] - weightsOptim[2,3])
+boundry23 <- (-weightsOptim[1,2] + weightsOptim[1,3] + weightsOptim[3,3]*x - weightsOptim[3,2]*x)/(weightsOptim[2,2] - weightsOptim[2,3])
+
+bframe1 <- data.frame(solvency = x, PIratio = boundry12, deny=rep("boundry12", length(x)))
+bframe2 <- data.frame(solvency = x, PIratio = boundry13, deny=rep("boundry13", length(x)))
+bframe3 <- data.frame(solvency = x, PIratio = boundry23, deny=rep("boundry23", length(x)))
+
+predframe <- data.frame(loanDf, predictions, predictedLabels) 
+if(csv){
+  write.csv(predframe, "perdictions.csv")
+}
+
+if(pdf){
+  pdf("discFunction3C.pdf")
+  print(ggplot(data = loanDf, 
+               aes(x = solvency, y = PIratio, colour=deny, fill=deny)) + 
+          geom_point() +
+          xlab("solvency") +
+          ylab("PIratio") +
+          #ylim(0, 10) +
+          theme_bw(base_size = 14, base_family = "Helvetica") +
+          geom_line(data = bframe1) +
+          geom_line(data = bframe2) +
+          geom_line(data = bframe3) +
+          scale_color_manual("deny", values = c("boundry12" = "black", "boundry13" = "grey", "boundry23" = "purple",
+                                                "Approved" = "blue", "Denied" = "red", "Undecided" = "green")))
+}
